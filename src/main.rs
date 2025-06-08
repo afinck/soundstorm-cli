@@ -3,8 +3,8 @@ use serde_json::Value;
 use std::fs;
 use std::io::{self, Write};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use toml::Value as TomlValue;
@@ -18,7 +18,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Line},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
@@ -105,15 +105,21 @@ fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Er
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .margin(2)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Min(1),
-                    Constraint::Length(3),
-                ].as_ref())
+                .constraints(
+                    [
+                        Constraint::Length(3),
+                        Constraint::Min(1),
+                        Constraint::Length(3),
+                    ]
+                    .as_ref(),
+                )
                 .split(f.size());
 
-            let title = Paragraph::new("Soundstorm Radio CLI")
-                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+            let title = Paragraph::new("Soundstorm Radio CLI").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            );
             f.render_widget(title, chunks[0]);
 
             let now_playing_text = now_playing.lock().unwrap().clone();
@@ -148,8 +154,10 @@ fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Er
                             status = "Started playback".to_string();
 
                             for _ in 0..5 {
-                                if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title") {
-                                    if !title.is_empty() && !title.contains("soundstorm-radio.com") {
+                                if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title")
+                                {
+                                    if !title.is_empty() && !title.contains("soundstorm-radio.com")
+                                    {
                                         let mut np = now_playing.lock().unwrap();
                                         *np = title;
                                         break;
@@ -206,24 +214,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             // Try to get media-title, fallback to metadata
             let title = match get_mpv_property(&ipc_path_string, "media-title") {
-                Ok(Some(title)) if !title.is_empty() && !title.contains("soundstorm-radio.com") => title,
-                Ok(_) => last_title.clone(), // No new info, keep last
+                Ok(Some(title)) if !title.is_empty() && !title.contains("soundstorm-radio.com") => {
+                    title
+                }
+                Ok(_) => last_title.clone(),  // No new info, keep last
                 Err(_) => last_title.clone(), // mpv not running, keep last
                 _ => {
                     // Try metadata as fallback
                     match get_mpv_property(&ipc_path_string, "metadata") {
                         Ok(Some(meta)) if !meta.is_empty() => {
                             if let Ok(json) = serde_json::from_str::<Value>(&meta) {
-                                if let Some(icy_title) = json.get("icy-title").and_then(|v| v.as_str()) {
+                                if let Some(icy_title) =
+                                    json.get("icy-title").and_then(|v| v.as_str())
+                                {
                                     icy_title.to_string()
-                                } else if let Some(stream_title) = json.get("stream-title").and_then(|v| v.as_str()) {
+                                } else if let Some(stream_title) =
+                                    json.get("stream-title").and_then(|v| v.as_str())
+                                {
                                     stream_title.to_string()
                                 } else if let (Some(title), Some(artist)) = (
                                     json.get("title").and_then(|v| v.as_str()),
                                     json.get("artist").and_then(|v| v.as_str()),
                                 ) {
                                     format!("{} - {}", artist, title)
-                                } else if let Some(title) = json.get("title").and_then(|v| v.as_str()) {
+                                } else if let Some(title) =
+                                    json.get("title").and_then(|v| v.as_str())
+                                {
                                     title.to_string()
                                 } else {
                                     last_title.clone()
