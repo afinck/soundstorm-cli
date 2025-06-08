@@ -1,0 +1,158 @@
+stages:
+  - lint
+  - test
+  - build
+  - package
+  - release
+
+variables:
+  GIT_STRATEGY: clone
+
+before_script:
+  - NAME=$(grep -m1 '^name *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+  - VERSION=$(grep -m1 '^version *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+  # Try to extract multi-line description first 
+  - DESCRIPTION=$(sed -n '/^description *= *"""/,/^"""/p' Cargo.toml | sed '1d;$d')
+  # If that fails, try single-line description
+  - if [ -z "$DESCRIPTION" ]; then DESCRIPTION=$(grep -m1 '^description *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/'); fi
+  - SUMMARY=$(echo "$DESCRIPTION" | head -n1)
+  - LONGDESC=$(echo "$DESCRIPTION" | tail -n +2 | sed 's/^/ /')
+  - if [ -n "$LONGDESC" ]; then DESC="$SUMMARY\n$LONGDESC"; else DESC="$SUMMARY"; fi
+  - AUTHOR=$(grep -m1 '^authors *= *' Cargo.toml | sed 's/authors *= *\[\(.*\)\]/\1/' | sed 's/"//g' | cut -d',' -f1 | xargs)
+  # Replace placeholders in build/redhat.spec.in (single-line replacements only)
+  - sed "s|@NAME@|$NAME|g;s|@VERSION@|$VERSION|g;s|@SUMMARY@|$SUMMARY|g;s|@AUTHOR@|$AUTHOR|g" build/redhat.spec.in > build/redhat.spec
+  # For multiline DESCRIPTION, use printf and sed for build/redhat.spec
+  - |
+      if grep -q '@DESCRIPTION@' build/redhat.spec; then
+        printf '%s\n' "$DESCRIPTION" | sed '/@DESCRIPTION@/{
+          r /dev/stdin
+          d
+        }' build/redhat.spec > build/redhat.spec.tmp && mv build/redhat.spec.tmp build/redhat.spec
+      fi
+  # Replace placeholders in build/debian_control.in and write to build/debian_control (with correct Description formatting)
+  - sed "s|@NAME@|$NAME|g;s|@VERSION@|$VERSION|g;s|@AUTHOR@|$AUTHOR|g" build/debian_control.in > build/debian_control
+  - |
+      if grep -q '@DESCRIPTION@' build/debian_control; then
+        {
+          echo "Description: $SUMMARY"
+          if [ -n "$LONGDESC" ]; then
+            echo "$LONGDESC"
+          fi
+        } > desc.tmp
+        sed "/@DESCRIPTION@/{
+          r desc.tmp
+          d
+        }" build/debian_control > build/debian_control.tmp && mv build/debian_control.tmp build/debian_control
+        rm desc.tmp
+      fi
+
+lint:
+  image: rust:latest
+  stage: lint
+  script:
+    - rustup component add clippy rustfmt
+    - cargo fmt -- --check
+    - cargo clippy -- -D warnings
+
+test:
+  image: rust:latest
+  stage: test
+  script:
+    - cargo test --release
+
+build:
+  image: rust:latest
+  stage: build
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/release/$CI_PROJECT_NAME
+
+package_rpm:
+  image: fedora:latest
+  stage: package
+  dependencies:
+    - build
+  script:
+    - dnf install -y rpm-build
+    - mkdir -p $CI_PROJECT_DIR/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+    - cp target/release/$CI_PROJECT_NAME $CI_PROJECT_DIR/rpmbuild/SOURCES/
+    - cp build/redhat.spec $CI_PROJECT_DIR/rpmbuild/SPECS/
+    - rpmbuild --define "_topdir $CI_PROJECT_DIR/rpmbuild" -ba $CI_PROJECT_DIR/rpmbuild/SPECS/redhat.spec
+    - RELEASE=$(grep -m1 '^Release:' build/redhat.spec | sed 's/Release:[[:space:]]*//;s/%{?dist}//')
+    - echo "RELEASE=$RELEASE" >> variables.env
+    - RPM_FILE=$(find rpmbuild/RPMS/x86_64 -name "${CI_PROJECT_NAME}-*.x86_64.rpm" | head -n1)
+    - RPM_BASENAME=$(basename "$RPM_FILE")
+    # Extract the release+dist part (e.g., 1.fc42) from the RPM filename
+    - RELEASE_DIST=$(echo "$RPM_BASENAME" | sed -E "s/^${CI_PROJECT_NAME}-[0-9.]+-([^.]+(\.[^.]+)*)\.x86_64\.rpm$/\1/")
+    - echo "RELEASE_DIST=$RELEASE_DIST" >> variables.env
+    - TAG_NO_V="${CI_COMMIT_TAG#v}"
+    - echo "TAG_NO_V=$TAG_NO_V" >> variables.env
+  artifacts:
+    paths:
+      - rpmbuild/RPMS/
+    reports:
+      dotenv: variables.env
+
+package_deb:
+  image: debian:latest
+  stage: package
+  dependencies:
+    - build
+  script:
+    - apt-get update && apt-get install -y build-essential devscripts
+    - mkdir -p $CI_PROJECT_DIR/debbuild/$CI_PROJECT_NAME/DEBIAN
+    - mkdir -p $CI_PROJECT_DIR/debbuild/$CI_PROJECT_NAME/usr/bin
+    - cp target/release/$CI_PROJECT_NAME $CI_PROJECT_DIR/debbuild/$CI_PROJECT_NAME/usr/bin/
+    - cp build/debian_control $CI_PROJECT_DIR/debbuild/$CI_PROJECT_NAME/DEBIAN/control
+    - dpkg-deb --build $CI_PROJECT_DIR/debbuild/$CI_PROJECT_NAME 
+  artifacts:
+    paths:
+      - debbuild/$CI_PROJECT_NAME.deb
+
+tag_release:
+  stage: release
+  image: rust:latest
+  script:
+    - VERSION=$(grep -m1 '^version *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+    - TAG="v$VERSION"
+    - git config --global user.email "ci@example.com"
+    - git config --global user.name "CI Bot"
+    - git remote set-url origin https://gitlab-ci-token:${CI_PUSH_TOKEN}@gitlab.heavycross.de/${CI_PROJECT_PATH}.git
+    - |
+      if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+        git tag "$TAG"
+        git push origin "$TAG"
+      else
+        echo "Tag $TAG already exists."
+      fi
+  only:
+    - master
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "Release job for ${CI_COMMIT_TAG}"
+  needs:
+    - package_rpm
+    - package_deb
+    - job: tag_release
+      optional: true
+  variables:
+    RELEASE_CLI_UPDATE_RELEASE: "true"
+  release:
+    tag_name: "${CI_COMMIT_TAG}"
+    description: "Release ${CI_COMMIT_TAG}"
+    assets:
+      links:
+        - name: "RPM package"
+          url: "https://gitlab.heavycross.de/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/${CI_PROJECT_NAME}-${TAG_NO_V}-${RELEASE_DIST}.x86_64.rpm?job=package_rpm"
+        - name: "DEB package"
+          url: "https://gitlab.heavycross.de/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/${CI_PROJECT_NAME}.deb?job=package_deb"
+  only:
+    - tags
+  artifacts:
+    reports:
+      dotenv: variables.env

@@ -1,0 +1,51 @@
+name: Build DEB and RPM packages
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Install cargo-deb and cargo-rpm
+        run: cargo install cargo-deb cargo-rpm
+
+      - name: Build DEB package
+        run: cargo deb
+
+      - name: Build RPM package
+        run: cargo rpm build
+
+      - name: Upload DEB and RPM as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            target/debian/*.deb
+            target/release/rpmbuild/RPMS/x86_64/*.rpm
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/debian/*.deb
+            target/release/rpmbuild/RPMS/x86_64/*.rpm
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,42 @@
+[package]
+name = "soundstorm-cli"
+version = "0.1.8"
+edition = "2021"
+authors = ["Andreas Finck <andreas.finck@icloud.com>"]
+description = """
+Plays Soundstorm Internet-Radio Stream
+ For me this is the only radio I need.
+ Much better than what we used to have around here.
+ No distraction - no noise - just music.
+"""
+
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+serde_json = "1.0"
+toml = "0.8"
+
+[package.metadata.deb]
+maintainer = "Andreas Finck <andreas.finck@icloud.com>"
+depends = "libc6 (>= 2.28), mpv"
+section = "util"
+priority = "optional"
+assets = [
+    ["target/release/soundstorm-cli", "usr/bin/soundstorm-cli", "755"],
+]
+conf-files = []
+
+[package.metadata.rpm]
+package = "soundstorm-cli"
+Summary = "A simple command-line password generator."
+requires = ["mpv"]
+description = "For me this is the only radio I need. Much better than what we used to have around here. No distraction - no noise - just music."
+
+[package.metadata.rpm.cargo]
+buildflags = ["--release"]
+
+[package.metadata.rpm.targets]
+soundstorm-cli = { path = "/usr/bin/soundstorm-cli" }
+
