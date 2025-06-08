@@ -103,6 +103,16 @@ fn main() -> io::Result<()> {
                     mpv = Some(start_mpv(ipc_path, &stream_url)?);
                     println!("Started playback.");
 
+                    for _ in 0..5 {
+                        if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title") {
+                            if !title.is_empty() && !title.contains("soundstorm-radio.com") {
+                                println!("Now playing: {}", title);
+                                break;
+                            }
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+
                     // Start background song info thread
                     let ipc_path = ipc_path.to_string();
                     let running = running.clone();
