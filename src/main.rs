@@ -3,11 +3,25 @@ use serde_json::Value;
 use std::fs;
 use std::io::{self, Write};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use toml::Value as TomlValue;
+
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Span, Line},
+    widgets::{Block, Borders, Paragraph},
+    Terminal,
+};
 
 fn start_mpv(ipc_path: &str, url: &str) -> io::Result<Child> {
     Command::new("mpv")
@@ -66,167 +80,173 @@ fn get_stream_url_from_toml() -> Option<String> {
         .map(|s| s.to_string())
 }
 
-fn main() -> io::Result<()> {
+fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Error>> {
     let stream_url = get_stream_url_from_toml().unwrap_or_else(|| {
         eprintln!("Stream URL not found in Cargo.toml, using default.");
         "http://stream.soundstorm-radio.com:8000".to_string()
     });
     let ipc_path = "/tmp/mpv-soundstorm.sock";
 
-    println!("Soundstorm CLI Player");
-    println!("Type 'help' to see available commands.");
+    // Terminal setup
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-    let mut mpv = None;
-    let running = Arc::new(AtomicBool::new(true));
-    let mut song_thread = None;
+    // App state
+    let mut running = true;
+    let mut status = "Press [S]tart, [P]ause, [X] Stop, [Q]uit".to_string();
+    let mut mpv: Option<Child> = None;
 
-    // Graceful exit on Ctrl+C
-    {
-        let running = running.clone();
-        ctrlc::set_handler(move || {
-            running.store(false, std::sync::atomic::Ordering::SeqCst);
-            println!("\nReceived Ctrl+C, exiting...");
-        })
-        .expect("Error setting Ctrl+C handler");
-    }
+    // Main loop
+    while running {
+        terminal.draw(|f| {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(2)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(1),
+                    Constraint::Length(3),
+                ].as_ref())
+                .split(f.size());
 
-    loop {
-        print!("> ");
-        io::stdout().flush()?;
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let cmd = input.trim().to_lowercase();
+            let title = Paragraph::new("Soundstorm Radio CLI")
+                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+            f.render_widget(title, chunks[0]);
 
-        match cmd.as_str() {
-            "start" | "s" => {
-                if mpv.is_none() {
-                    mpv = Some(start_mpv(ipc_path, &stream_url)?);
-                    println!("Started playback.");
+            let now_playing_text = now_playing.lock().unwrap().clone();
+            let status_par = Paragraph::new(format!("Now playing: {}", now_playing_text))
+                .block(Block::default().borders(Borders::ALL).title("Status"));
+            f.render_widget(status_par, chunks[1]);
 
-                    for _ in 0..5 {
-                        if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title") {
-                            if !title.is_empty() && !title.contains("soundstorm-radio.com") {
-                                println!("Now playing: {}", title);
-                                break;
-                            }
+            let help = Paragraph::new(Line::from(vec![
+                Span::styled("[S]tart ", Style::default().fg(Color::Green)),
+                Span::raw("[P]ause "),
+                Span::styled("[X] Stop ", Style::default().fg(Color::Red)),
+                Span::raw("[Q]uit"),
+            ]))
+            .block(Block::default().borders(Borders::ALL).title("Controls"));
+            f.render_widget(help, chunks[2]);
+        })?;
+
+        // Handle input
+        if event::poll(std::time::Duration::from_millis(200))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        running = false;
+                        if let Some(mut child) = mpv.take() {
+                            let _ = send_mpv_command(ipc_path, r#""quit""#);
+                            let _ = child.wait();
                         }
-                        std::thread::sleep(std::time::Duration::from_secs(1));
                     }
+                    KeyCode::Char('s') | KeyCode::Char('S') => {
+                        if mpv.is_none() {
+                            mpv = Some(start_mpv(ipc_path, &stream_url)?);
+                            status = "Started playback".to_string();
 
-                    // Start background song info thread
-                    let ipc_path = ipc_path.to_string();
-                    let running = running.clone();
-                    song_thread = Some(thread::spawn(move || {
-                        let mut last_title = String::new();
-                        while running.load(std::sync::atomic::Ordering::SeqCst) {
-                            if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title") {
-                                if !title.is_empty()
-                                    && title != last_title
-                                    && !title.contains("soundstorm-radio.com")
-                                {
-                                    println!("\nNow playing: {}", title);
-                                    last_title = title;
-                                    print!("> ");
-                                    io::stdout().flush().ok();
-                                }
-                            }
-                            thread::sleep(Duration::from_secs(2));
-                        }
-                    }));
-                } else {
-                    println!("Already playing.");
-                }
-            }
-            "pause" | "p" => {
-                let _ = send_mpv_command(ipc_path, r#""cycle", "pause""#);
-                println!("Toggled pause.");
-            }
-            "stop" | "x" => {
-                let _ = send_mpv_command(ipc_path, r#""quit""#);
-                if let Some(mut child) = mpv.take() {
-                    let _ = child.wait();
-                }
-                running.store(false, std::sync::atomic::Ordering::SeqCst);
-                if let Some(handle) = song_thread.take() {
-                    let _ = handle.join();
-                }
-                println!("Stopped playback.");
-            }
-            "status" | "i" => {
-                match get_mpv_property(ipc_path, "media-title") {
-                    Ok(Some(title))
-                        if !title.is_empty() && !title.contains("soundstorm-radio.com") =>
-                    {
-                        println!("Now playing: {}", title)
-                    }
-                    _ => {
-                        // Try metadata as fallback
-                        match get_mpv_property(ipc_path, "metadata") {
-                            Ok(Some(meta)) if !meta.is_empty() => {
-                                if let Ok(json) = serde_json::from_str::<Value>(&meta) {
-                                    // Try to extract common fields
-                                    if let Some(icy_title) =
-                                        json.get("icy-title").and_then(|v| v.as_str())
-                                    {
-                                        println!("Now playing: {}", icy_title);
-                                    } else if let Some(stream_title) =
-                                        json.get("stream-title").and_then(|v| v.as_str())
-                                    {
-                                        println!("Now playing: {}", stream_title);
-                                    } else if let (Some(title), Some(artist)) = (
-                                        json.get("title").and_then(|v| v.as_str()),
-                                        json.get("artist").and_then(|v| v.as_str()),
-                                    ) {
-                                        println!("Now playing: {} - {}", artist, title);
-                                    } else if let Some(title) =
-                                        json.get("title").and_then(|v| v.as_str())
-                                    {
-                                        println!("Now playing: {}", title);
-                                    } else {
-                                        println!(
-                                            "No song metadata found. Raw metadata: {:#}",
-                                            json
-                                        );
+                            for _ in 0..5 {
+                                if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title") {
+                                    if !title.is_empty() && !title.contains("soundstorm-radio.com") {
+                                        let mut np = now_playing.lock().unwrap();
+                                        *np = title;
+                                        break;
                                     }
-                                } else {
-                                    println!("No song metadata found.");
                                 }
+                                thread::sleep(Duration::from_secs(1));
                             }
-                            _ => println!("No song info available."),
+                        } else {
+                            status = "Already playing".to_string();
                         }
                     }
+                    KeyCode::Char('p') | KeyCode::Char('P') => {
+                        let _ = send_mpv_command(ipc_path, r#""cycle", "pause""#);
+                        status = "Toggled pause".to_string();
+                    }
+                    KeyCode::Char('x') | KeyCode::Char('X') => {
+                        if let Some(mut child) = mpv.take() {
+                            let _ = send_mpv_command(ipc_path, r#""quit""#);
+                            let _ = child.wait();
+                        }
+                        status = "Stopped playback".to_string();
+                        let mut np = now_playing.lock().unwrap();
+                        *np = "No song info yet".to_string();
+                    }
+                    _ => {}
                 }
             }
-            "help" | "h" => {
-                println!("Available commands:");
-                println!("  start (s)   - Start playback");
-                println!("  pause (p)   - Pause/resume playback");
-                println!("  stop  (x)   - Stop playback");
-                println!("  status (i)  - Show current song info");
-                println!("  help  (h)   - Show this help");
-                println!("  exit  (q)   - Exit the player");
-            }
-            "exit" | "q" => {
-                let _ = send_mpv_command(ipc_path, r#""quit""#);
-                if let Some(mut child) = mpv {
-                    let _ = child.wait();
-                }
-                running.store(false, std::sync::atomic::Ordering::SeqCst);
-                if let Some(handle) = song_thread {
-                    let _ = handle.join();
-                }
-                println!("Exiting.");
-                break;
-            }
-            "" => continue, // Ignore empty input
-            _ => println!("Unknown command. Type 'help' for a list of commands."),
-        }
-
-        // Exit if Ctrl+C was pressed
-        if !running.load(std::sync::atomic::Ordering::SeqCst) {
-            break;
         }
     }
 
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let stream_url = get_stream_url_from_toml().unwrap_or_else(|| {
+        eprintln!("Stream URL not found in Cargo.toml, using default.");
+        "http://stream.soundstorm-radio.com:8000".to_string()
+    });
+    let ipc_path = "/tmp/mpv-soundstorm.sock";
+    let now_playing = Arc::new(Mutex::new("No song info yet".to_string()));
+
+    let now_playing_clone = Arc::clone(&now_playing);
+    let ipc_path_string = ipc_path.to_string();
+    thread::spawn(move || {
+        let mut last_title = String::new();
+        loop {
+            // Try to get media-title, fallback to metadata
+            let title = match get_mpv_property(&ipc_path_string, "media-title") {
+                Ok(Some(title)) if !title.is_empty() && !title.contains("soundstorm-radio.com") => title,
+                Ok(_) => last_title.clone(), // No new info, keep last
+                Err(_) => last_title.clone(), // mpv not running, keep last
+                _ => {
+                    // Try metadata as fallback
+                    match get_mpv_property(&ipc_path_string, "metadata") {
+                        Ok(Some(meta)) if !meta.is_empty() => {
+                            if let Ok(json) = serde_json::from_str::<Value>(&meta) {
+                                if let Some(icy_title) = json.get("icy-title").and_then(|v| v.as_str()) {
+                                    icy_title.to_string()
+                                } else if let Some(stream_title) = json.get("stream-title").and_then(|v| v.as_str()) {
+                                    stream_title.to_string()
+                                } else if let (Some(title), Some(artist)) = (
+                                    json.get("title").and_then(|v| v.as_str()),
+                                    json.get("artist").and_then(|v| v.as_str()),
+                                ) {
+                                    format!("{} - {}", artist, title)
+                                } else if let Some(title) = json.get("title").and_then(|v| v.as_str()) {
+                                    title.to_string()
+                                } else {
+                                    last_title.clone()
+                                }
+                            } else {
+                                last_title.clone()
+                            }
+                        }
+                        Ok(_) => last_title.clone(),
+                        Err(_) => last_title.clone(),
+                    }
+                }
+            };
+            if title != last_title && !title.is_empty() {
+                let mut np = now_playing_clone.lock().unwrap();
+                *np = title.clone();
+                last_title = title;
+            }
+            thread::sleep(Duration::from_secs(2));
+        }
+    });
+
+    // Run the TUI
+    run_tui(now_playing)?;
     Ok(())
 }

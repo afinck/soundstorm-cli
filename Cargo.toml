@@ -6,6 +6,8 @@ author = "Andreas Finck <andreas.finck@icloud.com>"
 description = "Plays Soundstorm Radio only"
 
 [dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
 serde_json = "1.0"
 toml = "0.8"
 ctrlc = "3"
