@@ -1,0 +1,13 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+author = "Andreas Finck <andreas.finck@icloud.com>"
+description = "Plays Soundstorm Radio only"
+
+[dependencies]
+serde_json = "1.0"
+toml = "0.8"
+
+[package.metadata]
+stream_url = "http://stream.soundstorm-radio.com:8000"
