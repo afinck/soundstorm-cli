@@ -1,10 +1,12 @@
+use ctrlc;
+use serde_json::Value;
+use std::fs;
 use std::io::{self, Write};
 use std::process::{Child, Command, Stdio};
-use serde_json::Value;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::fs;
 use toml::Value as TomlValue;
 
 fn start_mpv(ipc_path: &str, url: &str) -> io::Result<Child> {
@@ -17,8 +19,8 @@ fn start_mpv(ipc_path: &str, url: &str) -> io::Result<Child> {
 }
 
 fn send_mpv_command(ipc_path: &str, command: &str) -> io::Result<()> {
-    use std::os::unix::net::UnixStream;
     use std::io::Write;
+    use std::os::unix::net::UnixStream;
     let mut stream = UnixStream::connect(ipc_path)?;
     let json = format!(r#"{{"command": [{}]}}"#, command);
     stream.write_all(json.as_bytes())?;
@@ -27,8 +29,8 @@ fn send_mpv_command(ipc_path: &str, command: &str) -> io::Result<()> {
 }
 
 fn get_mpv_property(ipc_path: &str, property: &str) -> io::Result<Option<String>> {
+    use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
-    use std::io::{Write, BufRead, BufReader};
 
     let mut stream = UnixStream::connect(ipc_path)?;
     let cmd = format!(r#"{{"command": ["get_property", "{}"]}}"#, property);
@@ -72,21 +74,31 @@ fn main() -> io::Result<()> {
     let ipc_path = "/tmp/mpv-soundstorm.sock";
 
     println!("Soundstorm CLI Player");
-    println!("Commands: start | pause | stop | status | exit");
+    println!("Type 'help' to see available commands.");
 
     let mut mpv = None;
     let running = Arc::new(AtomicBool::new(true));
     let mut song_thread = None;
+
+    // Graceful exit on Ctrl+C
+    {
+        let running = running.clone();
+        ctrlc::set_handler(move || {
+            running.store(false, std::sync::atomic::Ordering::SeqCst);
+            println!("\nReceived Ctrl+C, exiting...");
+        })
+        .expect("Error setting Ctrl+C handler");
+    }
 
     loop {
         print!("> ");
         io::stdout().flush()?;
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
-        let cmd = input.trim();
+        let cmd = input.trim().to_lowercase();
 
-        match cmd {
-            "start" => {
+        match cmd.as_str() {
+            "start" | "s" => {
                 if mpv.is_none() {
                     mpv = Some(start_mpv(ipc_path, &stream_url)?);
                     println!("Started playback.");
@@ -96,7 +108,7 @@ fn main() -> io::Result<()> {
                     let running = running.clone();
                     song_thread = Some(thread::spawn(move || {
                         let mut last_title = String::new();
-                        while running.load(Ordering::SeqCst) {
+                        while running.load(std::sync::atomic::Ordering::SeqCst) {
                             if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title") {
                                 if !title.is_empty()
                                     && title != last_title
@@ -115,24 +127,26 @@ fn main() -> io::Result<()> {
                     println!("Already playing.");
                 }
             }
-            "pause" => {
+            "pause" | "p" => {
                 let _ = send_mpv_command(ipc_path, r#""cycle", "pause""#);
                 println!("Toggled pause.");
             }
-            "stop" => {
+            "stop" | "x" => {
                 let _ = send_mpv_command(ipc_path, r#""quit""#);
                 if let Some(mut child) = mpv.take() {
                     let _ = child.wait();
                 }
-                running.store(false, Ordering::SeqCst);
+                running.store(false, std::sync::atomic::Ordering::SeqCst);
                 if let Some(handle) = song_thread.take() {
                     let _ = handle.join();
                 }
                 println!("Stopped playback.");
             }
-            "status" => {
+            "status" | "i" => {
                 match get_mpv_property(ipc_path, "media-title") {
-                    Ok(Some(title)) if !title.is_empty() && !title.contains("soundstorm-radio.com") => {
+                    Ok(Some(title))
+                        if !title.is_empty() && !title.contains("soundstorm-radio.com") =>
+                    {
                         println!("Now playing: {}", title)
                     }
                     _ => {
@@ -140,9 +154,32 @@ fn main() -> io::Result<()> {
                         match get_mpv_property(ipc_path, "metadata") {
                             Ok(Some(meta)) if !meta.is_empty() => {
                                 if let Ok(json) = serde_json::from_str::<Value>(&meta) {
-                                    println!("Metadata: {:#}", json);
+                                    // Try to extract common fields
+                                    if let Some(icy_title) =
+                                        json.get("icy-title").and_then(|v| v.as_str())
+                                    {
+                                        println!("Now playing: {}", icy_title);
+                                    } else if let Some(stream_title) =
+                                        json.get("stream-title").and_then(|v| v.as_str())
+                                    {
+                                        println!("Now playing: {}", stream_title);
+                                    } else if let (Some(title), Some(artist)) = (
+                                        json.get("title").and_then(|v| v.as_str()),
+                                        json.get("artist").and_then(|v| v.as_str()),
+                                    ) {
+                                        println!("Now playing: {} - {}", artist, title);
+                                    } else if let Some(title) =
+                                        json.get("title").and_then(|v| v.as_str())
+                                    {
+                                        println!("Now playing: {}", title);
+                                    } else {
+                                        println!(
+                                            "No song metadata found. Raw metadata: {:#}",
+                                            json
+                                        );
+                                    }
                                 } else {
-                                    println!("Metadata: {}", meta);
+                                    println!("No song metadata found.");
                                 }
                             }
                             _ => println!("No song info available."),
@@ -150,19 +187,34 @@ fn main() -> io::Result<()> {
                     }
                 }
             }
-            "exit" => {
+            "help" | "h" => {
+                println!("Available commands:");
+                println!("  start (s)   - Start playback");
+                println!("  pause (p)   - Pause/resume playback");
+                println!("  stop  (x)   - Stop playback");
+                println!("  status (i)  - Show current song info");
+                println!("  help  (h)   - Show this help");
+                println!("  exit  (q)   - Exit the player");
+            }
+            "exit" | "q" => {
                 let _ = send_mpv_command(ipc_path, r#""quit""#);
                 if let Some(mut child) = mpv {
                     let _ = child.wait();
                 }
-                running.store(false, Ordering::SeqCst);
+                running.store(false, std::sync::atomic::Ordering::SeqCst);
                 if let Some(handle) = song_thread {
                     let _ = handle.join();
                 }
                 println!("Exiting.");
                 break;
             }
-            _ => println!("Unknown command."),
+            "" => continue, // Ignore empty input
+            _ => println!("Unknown command. Type 'help' for a list of commands."),
+        }
+
+        // Exit if Ctrl+C was pressed
+        if !running.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
         }
     }
 

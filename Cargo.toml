@@ -8,6 +8,7 @@ description = "Plays Soundstorm Radio only"
 [dependencies]
 serde_json = "1.0"
 toml = "0.8"
+ctrlc = "3"
 
 [package.metadata]
 stream_url = "http://stream.soundstorm-radio.com:8000"
