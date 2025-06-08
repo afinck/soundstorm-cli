@@ -1,0 +1,18 @@
+Name:           @NAME@
+Version:        @VERSION@
+Release:        1%{?dist}
+Summary:        @SUMMARY@
+
+License:        MIT
+BuildArch:      x86_64
+
+%description
+@DESCRIPTION@
+Author: @AUTHOR@
+
+%install
+mkdir -p %{buildroot}/usr/bin
+cp %{_sourcedir}/@NAME@ %{buildroot}/usr/bin/@NAME@
+
+%files
+/usr/bin/@NAME@

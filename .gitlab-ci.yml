@@ -1,0 +1,141 @@
+stages:
+  - lint
+  - test
+  - build
+  - package
+  - release
+
+variables:
+  GIT_STRATEGY: clone
+
+before_script:
+  - NAME=$(grep -m1 '^name *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+  - VERSION=$(grep -m1 '^version *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+  - DESCRIPTION=$(sed -n '/^description *= *"""/,/^"""/p' Cargo.toml | sed '1d;$d')
+  - SUMMARY=$(echo "$DESCRIPTION" | head -n1)
+  - LONGDESC=$(echo "$DESCRIPTION" | tail -n +2 | sed 's/^/ /')
+  - if [ -n "$LONGDESC" ]; then DESC="$SUMMARY\n$LONGDESC"; else DESC="$SUMMARY"; fi
+  - AUTHOR=$(grep -m1 '^authors *= *' Cargo.toml | sed 's/authors *= *\[\(.*\)\]/\1/' | sed 's/"//g' | cut -d',' -f1 | xargs)
+  # Replace placeholders in build/redhat.spec.in (single-line replacements only)
+  - sed "s|@NAME@|$NAME|g;s|@VERSION@|$VERSION|g;s|@SUMMARY@|$SUMMARY|g;s|@AUTHOR@|$AUTHOR|g" build/redhat.spec.in > build/redhat.spec
+  # For multiline DESCRIPTION, use printf and sed for build/redhat.spec
+  - |
+      if grep -q '@DESCRIPTION@' build/redhat.spec; then
+        printf '%s\n' "$DESCRIPTION" | sed '/@DESCRIPTION@/{
+          r /dev/stdin
+          d
+        }' build/redhat.spec > build/redhat.spec.tmp && mv build/redhat.spec.tmp build/redhat.spec
+      fi
+  # Replace placeholders in build/debian_control.in and write to build/debian_control (with correct Description formatting)
+  - sed "s|@NAME@|$NAME|g;s|@VERSION@|$VERSION|g;s|@AUTHOR@|$AUTHOR|g" build/debian_control.in > build/debian_control
+  - |
+      if grep -q '@DESCRIPTION@' build/debian_control; then
+        {
+          echo "Description: $SUMMARY"
+          if [ -n "$LONGDESC" ]; then
+            echo "$LONGDESC"
+          fi
+        } > desc.tmp
+        sed "/@DESCRIPTION@/{
+          r desc.tmp
+          d
+        }" build/debian_control > build/debian_control.tmp && mv build/debian_control.tmp build/debian_control
+        rm desc.tmp
+      fi
+
+lint:
+  image: rust:latest
+  stage: lint
+  script:
+    - rustup component add clippy rustfmt
+    - cargo fmt -- --check
+    - cargo clippy -- -D warnings
+
+test:
+  image: rust:latest
+  stage: test
+  script:
+    - cargo test --release
+
+build:
+  image: rust:latest
+  stage: build
+  script:
+    - cargo build --release
+  artifacts:
+    paths:
+      - target/release/soundstorm-cli
+
+package_rpm:
+  image: fedora:latest
+  stage: package
+  dependencies:
+    - build
+  script:
+    - dnf install -y rpm-build
+    - mkdir -p $CI_PROJECT_DIR/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+    - cp target/release/soundstorm-cli $CI_PROJECT_DIR/rpmbuild/SOURCES/
+    - cp build/redhat.spec $CI_PROJECT_DIR/rpmbuild/SPECS/
+    - rpmbuild --define "_topdir $CI_PROJECT_DIR/rpmbuild" -ba $CI_PROJECT_DIR/rpmbuild/SPECS/redhat.spec
+  artifacts:
+    paths:
+      - rpmbuild/RPMS/
+
+package_deb:
+  image: debian:latest
+  stage: package
+  dependencies:
+    - build
+  script:
+    - apt-get update && apt-get install -y build-essential devscripts
+    - mkdir -p $CI_PROJECT_DIR/debbuild/app/DEBIAN
+    - mkdir -p $CI_PROJECT_DIR/debbuild/app/usr/bin
+    - cp target/release/app $CI_PROJECT_DIR/debbuild/app/usr/bin/
+    - cp build/debian_control $CI_PROJECT_DIR/debbuild/app/DEBIAN/control
+    - dpkg-deb --build $CI_PROJECT_DIR/debbuild/app
+  artifacts:
+    paths:
+      - debbuild/soundstorm-cli.deb
+
+tag_release:
+  stage: release
+  image: rust:latest
+  script:
+    - VERSION=$(grep -m1 '^version *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+    - TAG="v$VERSION"
+    - git config --global user.email "ci@example.com"
+    - git config --global user.name "CI Bot"
+    - git remote set-url origin https://gitlab-ci-token:${CI_PUSH_TOKEN}@gitlab.com/${CI_PROJECT_PATH}.git
+    - |
+      if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+        git tag "$TAG"
+        git push origin "$TAG"
+      else
+        echo "Tag $TAG already exists."
+      fi
+  only:
+    - main
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  script:
+    - echo "Release job for ${CI_COMMIT_TAG}"
+  needs:
+    - package_rpm
+    - package_deb
+    - job: tag_release
+      optional: true
+  variables:
+    RELEASE_CLI_UPDATE_RELEASE: "true"
+  release:
+    tag_name: "${CI_COMMIT_TAG}"
+    description: "Release ${CI_COMMIT_TAG}"
+    assets:
+      links:
+        - name: "RPM package"
+          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/soundstorm-cli-${CI_COMMIT_TAG#v}-1.x86_64.rpm?job=package_rpm"
+        - name: "DEB package"
+          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/soundstorm-cli.deb?job=package_deb"
+  only:
+    - tags

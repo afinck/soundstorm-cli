@@ -1,9 +1,10 @@
 [package]
-name = "app"
+name = "soundstorm-cli"
 version = "0.1.0"
 edition = "2021"
 author = "Andreas Finck <andreas.finck@icloud.com>"
-description = "Plays Soundstorm Radio only"
+description = "Plays Soundstorm Radio Stream"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 ratatui = "0.26"

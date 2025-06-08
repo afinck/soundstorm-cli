@@ -1,0 +1,7 @@
+Package: @NAME@
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: @AUTHOR@
+Description: @DESCRIPTION@
