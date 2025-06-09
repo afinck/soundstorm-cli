@@ -91,11 +91,11 @@ package_deb:
     - build
   script:
     - apt-get update && apt-get install -y build-essential devscripts
-    - mkdir -p $CI_PROJECT_DIR/debbuild/app/DEBIAN
-    - mkdir -p $CI_PROJECT_DIR/debbuild/app/usr/bin
-    - cp target/release/soundstorm-cli $CI_PROJECT_DIR/debbuild/app/usr/bin/
-    - cp build/debian_control $CI_PROJECT_DIR/debbuild/app/DEBIAN/control
-    - dpkg-deb --build $CI_PROJECT_DIR/debbuild/app
+    - mkdir -p $CI_PROJECT_DIR/debbuild/soundstorm-cli/DEBIAN
+    - mkdir -p $CI_PROJECT_DIR/debbuild/soundstorm-cli/usr/bin
+    - cp target/release/soundstorm-cli $CI_PROJECT_DIR/debbuild/soundstorm-cli/usr/bin/
+    - cp build/debian_control $CI_PROJECT_DIR/debbuild/soundstorm-cli/DEBIAN/control
+    - dpkg-deb --build $CI_PROJECT_DIR/debbuild/soundstorm-cli 
   artifacts:
     paths:
       - debbuild/soundstorm-cli.deb
