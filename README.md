@@ -4,10 +4,9 @@ A terminal-based radio player for [Soundstorm Radio](https://soundstorm-radio.co
 
 ## Features
 
-- Plays Soundstorm Radio stream using `mpv`
+- Plays Soundstorm Radio stream (or any custom stream URL) using `mpv`
 - Live-updating "Now Playing" info in the terminal
 - Simple, keyboard-driven controls
-- Reads stream URL from `Cargo.toml` (customizable)
 - Clean, cross-platform TUI using [ratatui](https://crates.io/crates/ratatui) and [crossterm](https://crates.io/crates/crossterm)
 
 ## Controls
@@ -30,17 +29,18 @@ A terminal-based radio player for [Soundstorm Radio](https://soundstorm-radio.co
    cd <your-repo>
    ```
 
-2. **(Optional) Edit the stream URL:**
-
-   In your `Cargo.toml`, set the stream URL under `[package.metadata]`:
-   ```toml
-   [package.metadata]
-   stream_url = "http://stream.soundstorm-radio.com:8000"
-   ```
-
-3. **Build and run:**
+2. **Build and run with the default stream:**
    ```sh
    cargo run
+   ```
+
+3. **Or run with a custom stream URL:**
+   ```sh
+   cargo run -- http://your.custom.stream/url
+   ```
+   Or, if you built a release binary:
+   ```sh
+   ./target/release/soundstorm-cli http://your.custom.stream/url
    ```
 
 4. **Enjoy the music!**  
@@ -57,7 +57,7 @@ docker run --rm -it --device /dev/snd soundstorm-cli
 
 ## License
 
-MIT
+MIT OR Apache-2.0
 
 ---
 

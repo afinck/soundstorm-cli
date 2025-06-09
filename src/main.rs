@@ -1,3 +1,4 @@
+use std::env;
 use std::fs;
 use std::io;
 use std::process::{Child, Command, Stdio};
@@ -19,6 +20,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
+
+const DEFAULT_STREAM_URL: &str = "http://stream.soundstorm-radio.com:8000";
 
 fn start_mpv(ipc_path: &str, url: &str) -> io::Result<Child> {
     Command::new("mpv")
@@ -66,22 +69,10 @@ fn get_mpv_property(ipc_path: &str, property: &str) -> io::Result<Option<String>
     Ok(None)
 }
 
-fn get_stream_url_from_toml() -> Option<String> {
-    let toml_str = fs::read_to_string("Cargo.toml").ok()?;
-    let toml_value: TomlValue = toml::from_str(&toml_str).ok()?;
-    toml_value
-        .get("package")?
-        .get("metadata")?
-        .get("stream_url")?
-        .as_str()
-        .map(|s| s.to_string())
-}
-
-fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Error>> {
-    let stream_url = get_stream_url_from_toml().unwrap_or_else(|| {
-        eprintln!("Stream URL not found in Cargo.toml, using default.");
-        "http://stream.soundstorm-radio.com:8000".to_string()
-    });
+fn run_tui(
+    now_playing: Arc<Mutex<String>>,
+    stream_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let ipc_path = "/tmp/mpv-soundstorm.sock";
 
     // Terminal setup
@@ -146,7 +137,7 @@ fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Er
                     }
                     KeyCode::Char('s') | KeyCode::Char('S') => {
                         if mpv.is_none() {
-                            mpv = Some(start_mpv(ipc_path, &stream_url)?);
+                            mpv = Some(start_mpv(ipc_path, stream_url)?);
                             for _ in 0..5 {
                                 if let Ok(Some(title)) = get_mpv_property(ipc_path, "media-title") {
                                     if !title.is_empty() && !title.contains("soundstorm-radio.com")
@@ -189,11 +180,19 @@ fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Er
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    let stream_url = if args.len() > 1 {
+        &args[1]
+    } else {
+        DEFAULT_STREAM_URL
+    };
+
     let ipc_path = "/tmp/mpv-soundstorm.sock";
     let now_playing = Arc::new(Mutex::new("No song info yet".to_string()));
 
     let now_playing_clone = Arc::clone(&now_playing);
     let ipc_path_string = ipc_path.to_string();
+    let stream_url_string = stream_url.to_string();
     thread::spawn(move || {
         let mut last_title = String::new();
         loop {
@@ -216,6 +215,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Run the TUI
-    run_tui(now_playing)?;
+    run_tui(now_playing, stream_url)?;
     Ok(())
 }
