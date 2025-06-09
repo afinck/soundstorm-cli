@@ -2,7 +2,7 @@
 name = "soundstorm-cli"
 version = "0.1.0"
 edition = "2021"
-authors = "Andreas Finck <andreas.finck@icloud.com>"
+authors = ["Andreas Finck <andreas.finck@icloud.com>"]
 description = """
 Plays Soundstorm Internet-Radio Stream
  For me this is the only radio I need.
