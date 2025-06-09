@@ -5,3 +5,4 @@ Priority: optional
 Architecture: amd64
 Maintainer: @AUTHOR@
 Description: @DESCRIPTION@
+Depends: ${shlibs:Depends}, ${misc:Depends}, mpv

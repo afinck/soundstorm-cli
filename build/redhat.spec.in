@@ -5,6 +5,7 @@ Summary:        @SUMMARY@
 
 License:        MIT
 BuildArch:      x86_64
+Requires:       mpv
 
 %description
 @DESCRIPTION@
