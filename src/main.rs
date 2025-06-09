@@ -1,11 +1,9 @@
 use std::env;
-use std::fs;
 use std::io;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use toml::Value as TomlValue;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -192,7 +190,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let now_playing_clone = Arc::clone(&now_playing);
     let ipc_path_string = ipc_path.to_string();
-    let stream_url_string = stream_url.to_string();
     thread::spawn(move || {
         let mut last_title = String::new();
         loop {
