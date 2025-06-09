@@ -148,7 +148,7 @@ fn run_tui(now_playing: Arc<Mutex<String>>) -> Result<(), Box<dyn std::error::Er
                         if mpv.is_none() {
                             mpv = Some(start_mpv(ipc_path, &stream_url)?);
                             for _ in 0..5 {
-                                if let Ok(Some(title)) = get_mpv_property(&ipc_path, "media-title")
+                                if let Ok(Some(title)) = get_mpv_property(ipc_path, "media-title")
                                 {
                                     if !title.is_empty() && !title.contains("soundstorm-radio.com")
                                     {
