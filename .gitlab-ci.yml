@@ -11,7 +11,10 @@ variables:
 before_script:
   - NAME=$(grep -m1 '^name *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
   - VERSION=$(grep -m1 '^version *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+  # Try to extract multi-line description first 
   - DESCRIPTION=$(sed -n '/^description *= *"""/,/^"""/p' Cargo.toml | sed '1d;$d')
+  # If that fails, try single-line description
+  - if [ -z "$DESCRIPTION" ]; then DESCRIPTION=$(grep -m1 '^description *= *"' Cargo.toml | sed 's/.*"\(.*\)".*/\1/'); fi
   - SUMMARY=$(echo "$DESCRIPTION" | head -n1)
   - LONGDESC=$(echo "$DESCRIPTION" | tail -n +2 | sed 's/^/ /')
   - if [ -n "$LONGDESC" ]; then DESC="$SUMMARY\n$LONGDESC"; else DESC="$SUMMARY"; fi
