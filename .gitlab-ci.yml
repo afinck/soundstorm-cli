@@ -137,8 +137,8 @@ release:
     assets:
       links:
         - name: "RPM package"
-          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/$CI_PROJECT_NAME-${CI_COMMIT_TAG#v}-1.*.x86_64.rpm?job=package_rpm"
+          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/${CI_PROJECT_NAME}-${CI_COMMIT_TAG#v}-1*.x86_64.rpm?job=package_rpm"
         - name: "DEB package"
-          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/$CI_PROJECT_NAME.deb?job=package_deb"
+          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/${CI_PROJECT_NAME}.deb?job=package_deb"
   only:
     - tags
