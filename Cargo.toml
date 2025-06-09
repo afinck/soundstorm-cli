@@ -3,7 +3,13 @@ name = "soundstorm-cli"
 version = "0.1.0"
 edition = "2021"
 author = "Andreas Finck <andreas.finck@icloud.com>"
-description = "Plays Soundstorm Internet-Radio Stream"
+description = """
+Plays Soundstorm Internet-Radio Stream
+ For me this is the only radio I need.
+ Much better than what we used to have around here.
+ No distraction - no noise - just music.
+"""
+
 license = "MIT OR Apache-2.0"
 
 [dependencies]
