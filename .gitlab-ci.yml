@@ -117,7 +117,7 @@ tag_release:
         echo "Tag $TAG already exists."
       fi
   only:
-    - main
+    - master
 
 release:
   stage: release
