@@ -1,8 +1,7 @@
 use serde_json::Value;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
