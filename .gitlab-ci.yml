@@ -80,9 +80,13 @@ package_rpm:
     - cp target/release/$CI_PROJECT_NAME $CI_PROJECT_DIR/rpmbuild/SOURCES/
     - cp build/redhat.spec $CI_PROJECT_DIR/rpmbuild/SPECS/
     - rpmbuild --define "_topdir $CI_PROJECT_DIR/rpmbuild" -ba $CI_PROJECT_DIR/rpmbuild/SPECS/redhat.spec
+    - RELEASE=$(grep -m1 '^Release:' build/redhat.spec | sed 's/Release:[[:space:]]*//;s/%{?dist}//')
+    - echo "RELEASE=$RELEASE" >> variables.env
   artifacts:
     paths:
       - rpmbuild/RPMS/
+    reports:
+      dotenv: variables.env
 
 package_deb:
   image: debian:latest
@@ -124,6 +128,8 @@ release:
   image: registry.gitlab.com/gitlab-org/release-cli:latest
   script:
     - echo "Release job for ${CI_COMMIT_TAG}"
+    - export TAG_NO_V="${CI_COMMIT_TAG#v}"
+    - echo "TAG_NO_V=$TAG_NO_V" >> variables.env
   needs:
     - package_rpm
     - package_deb
@@ -137,8 +143,11 @@ release:
     assets:
       links:
         - name: "RPM package"
-          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/${CI_PROJECT_NAME}-${CI_COMMIT_TAG#v}-1*.x86_64.rpm?job=package_rpm"
+          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/${CI_PROJECT_NAME}-${TAG_NO_V}-1.${RELEASE}.x86_64.rpm?job=package_rpm"
         - name: "DEB package"
           url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/${CI_PROJECT_NAME}.deb?job=package_deb"
   only:
     - tags
+  artifacts:
+    reports:
+      dotenv: variables.env
