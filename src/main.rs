@@ -1,4 +1,3 @@
-use ctrlc;
 use serde_json::Value;
 use std::fs;
 use std::io::{self, Write};
