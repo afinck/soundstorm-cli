@@ -119,7 +119,7 @@ tag_release:
     - TAG="v$VERSION"
     - git config --global user.email "ci@example.com"
     - git config --global user.name "CI Bot"
-    - git remote set-url origin https://gitlab-ci-token:${CI_PUSH_TOKEN}@gitlab.com/${CI_PROJECT_PATH}.git
+    - git remote set-url origin https://gitlab-ci-token:${CI_PUSH_TOKEN}@gitlab.heavycross.de/${CI_PROJECT_PATH}.git
     - |
       if ! git rev-parse "$TAG" >/dev/null 2>&1; then
         git tag "$TAG"
@@ -148,9 +148,9 @@ release:
     assets:
       links:
         - name: "RPM package"
-          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/${CI_PROJECT_NAME}-${TAG_NO_V}-${RELEASE_DIST}.x86_64.rpm?job=package_rpm"
+          url: "https://gitlab.heavycross.de/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/rpmbuild/RPMS/x86_64/${CI_PROJECT_NAME}-${TAG_NO_V}-${RELEASE_DIST}.x86_64.rpm?job=package_rpm"
         - name: "DEB package"
-          url: "https://gitlab.com/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/${CI_PROJECT_NAME}.deb?job=package_deb"
+          url: "https://gitlab.heavycross.de/${CI_PROJECT_PATH}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/debbuild/${CI_PROJECT_NAME}.deb?job=package_deb"
   only:
     - tags
   artifacts:
