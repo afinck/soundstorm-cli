@@ -1,15 +1,15 @@
 FROM rust:latest
 
-# Install common development tools
+# Install required development tools and libraries
 RUN apt-get update && apt-get install -y \
-    mpv \
-    ffmpeg \
+    libsqlite3-dev \        # For SQLite support in Rust
+    wkhtmltopdf \           # For HTML to PDF export (optional, for reports)
+    curl \                  # For network tests (optional)
+    git \                   # For pulling dependencies if needed
     pkg-config \
-    libssl-dev \
     build-essential \
-    libasound2-dev \
     && rm -rf /var/lib/apt/lists/* \
-    rustup component add rustfmt
+    && rustup component add rustfmt
 
 # Create a new user to avoid running as root
 RUN useradd -ms /bin/bash rustdev
