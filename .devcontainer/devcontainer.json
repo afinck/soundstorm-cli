@@ -1,0 +1,23 @@
+{
+  "name": "Rust Soundstorm-cli Dev",
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y rpm mpv dpkg-dev devscripts build-essential pkg-config libssl-dev libclang-dev clang && cargo install cargo-rpm",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "ms-azuretools.vscode-docker",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  }
+//   "mounts": [
+//     "source=${localEnv:HOME}/.cargo/registry,target=/root/.cargo/registry,type=bind,consistency=cached"
+//   ]
+}
